@@ -8,6 +8,12 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
+ *
+ * Blink modes:
+ * 0 = no blinking
+ * 1 = blink backlight only
+ * 2 = blink backlight + rear cam flash
+ * 3 = blink rear cam flash only
  */
 
 #include <linux/platform_device.h>
@@ -27,9 +33,10 @@
 static bool bln_enabled = true;
 static bool bln_ongoing = false; /* ongoing LED Notification */
 static int bln_blink_state = 0;
-static int bln_blink_mode = 1; /* blink by default */
+static int bln_blink_mode = 0; /* no blink by default */
 static bool bln_suspended = false; /* is system suspended */
 static struct bln_implementation *bln_imp = NULL;
+static struct bln_implementation *bln_imp_flash = NULL;
 
 static long unsigned int notification_led_mask = 0x0;
 
@@ -67,14 +74,24 @@ static void reset_bln_states(void)
 
 static void bln_enable_backlights(int mask)
 {
-	if (likely(bln_imp && bln_imp->enable))
+	if (bln_imp && bln_blink_mode != 3){
 		bln_imp->enable(mask);
+	}
+
+	if ((bln_blink_mode == 2 || bln_blink_mode == 3) && bln_imp_flash){
+		bln_imp_flash->enable(mask);
+	}
 }
 
 static void bln_disable_backlights(int mask)
 {
-	if (likely(bln_imp && bln_imp->disable))
+	if (bln_imp && bln_blink_mode != 3){
 		bln_imp->disable(mask);
+	}
+	
+	if ((bln_blink_mode == 2 || bln_blink_mode == 3) && bln_imp_flash){
+		bln_imp_flash->disable(mask);
+	}
 }
 
 static void bln_power_on(void)
@@ -106,11 +123,23 @@ static void bln_early_suspend(struct early_suspend *h)
 	bln_suspended = true;
 }
 
+static void disable_led_notification(void)
+{
+	if (bln_ongoing) {
+		bln_disable_backlights(gen_all_leds_mask());
+		bln_power_off();
+	}
+
+	reset_bln_states();
+
+	pr_info("%s: notification led disabled\n", __FUNCTION__);
+}
+
 static void bln_late_resume(struct early_suspend *h)
 {
 	bln_suspended = false;
 
-	reset_bln_states();
+	disable_led_notification();
 }
 
 static struct early_suspend bln_suspend_data = {
@@ -158,18 +187,6 @@ static void enable_led_notification(void)
 		kthread_run(&blink_thread, NULL,"bln_blink_thread");
 
 	pr_info("%s: notification led enabled\n", __FUNCTION__);
-}
-
-static void disable_led_notification(void)
-{
-	if (bln_suspended && bln_ongoing) {
-		bln_disable_backlights(gen_all_leds_mask());
-		bln_power_off();
-	}
-
-	reset_bln_states();
-
-	pr_info("%s: notification led disabled\n", __FUNCTION__);
 }
 
 static ssize_t backlightnotification_status_read(struct device *dev,
@@ -268,6 +285,31 @@ static ssize_t notification_led_mask_write(struct device *dev,
 	} else {
 		//TODO: correct error code
 		return -1;
+	}
+
+	return size;
+}
+
+static ssize_t blink_mode_read(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", bln_blink_mode);
+}
+
+static ssize_t blink_mode_write(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	unsigned int data;
+
+	if (sscanf(buf, "%u\n", &data) != 1) {
+		pr_info("%s: input error\n", __FUNCTION__);
+		return size;
+	}
+
+	if (data >= 0 && data < 4) {
+		bln_blink_mode = data;
+	} else {
+		pr_info("%s: wrong input %u\n", __FUNCTION__, data);
 	}
 
 	return size;
@@ -397,6 +439,9 @@ static DEVICE_ATTR(buttons_led, S_IRUGO | S_IWUGO,
 
 static DEVICE_ATTR(blink_control, S_IRUGO | S_IWUGO, blink_control_read,
 		blink_control_write);
+
+static DEVICE_ATTR(blink_mode, S_IRUGO | S_IWUGO, blink_mode_read,
+		blink_mode_write);
 static DEVICE_ATTR(enabled, S_IRUGO | S_IWUGO,
 		backlightnotification_status_read,
 		backlightnotification_status_write);
@@ -413,9 +458,12 @@ static DEVICE_ATTR(version, S_IRUGO , backlightnotification_version, NULL);
 static DEVICE_ATTR(wakelock, S_IRUGO | S_IWUGO, wakelock_read, wakelock_write);
 #endif
 
+module_param(bln_blink_mode, int, 0664);
+
 
 static struct attribute *bln_notification_attributes[] = {
 	&dev_attr_blink_control.attr,
+	&dev_attr_blink_mode.attr,
 	&dev_attr_enabled.attr,
 	&dev_attr_led_count.attr,
 	&dev_attr_notification_led.attr,
@@ -450,9 +498,20 @@ void register_bln_implementation(struct bln_implementation *imp)
 	//TODO: more checks
 	if(imp){
 		bln_imp = imp;
+		printk(KERN_DEBUG "Registered BLN: button-backlight\n");
 	}
 }
 EXPORT_SYMBOL(register_bln_implementation);
+
+void register_bln_implementation_flash(struct bln_implementation *imp)
+{
+	//TODO: more checks
+	if(imp){
+		bln_imp_flash = imp;
+		printk(KERN_DEBUG "Registered BLN: rearcam-flash\n");
+	}
+}
+EXPORT_SYMBOL(register_bln_implementation_flash);
 
 /**
  *	bln_is_ongoing - check if a bln (led) notification is ongoing
