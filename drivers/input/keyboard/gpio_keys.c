@@ -26,6 +26,9 @@
 #include <linux/workqueue.h>
 #include <linux/gpio.h>
 #include <linux/pm_runtime.h>
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+#include <linux/input/sweep2wake.h>
+#endif
 #ifndef CONFIG_SAMSUNG_PRODUCT_SHIP
 #include <mach/sec_common.h>
 #include <mach/sec_param.h>
@@ -654,6 +657,17 @@ static int __devinit gpio_keys_probe(struct platform_device *pdev)
 	input->id.vendor = 0x0001;
 	input->id.product = 0x0001;
 	input->id.version = 0x0100;
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	if(strcmp(input->name, "gpio-keys") == 0){
+		// This is the input device we need to register
+		// with sweep2wake!
+		sweep2wake_setdev(input);
+		printk("s2w: registered input_dev\n");
+
+	} else {
+		printk("s2w input-hunter: %s\n", input->name);
+	}
+#endif
 
 	pm_runtime_enable(&pdev->dev);
 
