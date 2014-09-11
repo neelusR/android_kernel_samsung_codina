@@ -1503,10 +1503,6 @@ static void bt404_ts_report_touch_data(struct bt404_ts_data *data,
 			input_mt_slot(data->input_dev_ts, i);
 			input_mt_report_slot_state(data->input_dev_ts,
 							MT_TOOL_FINGER, false);
-#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
-			barrier[0] = false;
-			barrier[1] = false;
-#endif
 		}
 		input_sync(data->input_dev_ts);
 
@@ -1549,7 +1545,10 @@ static void bt404_ts_report_touch_data(struct bt404_ts_data *data,
 			dev_info(&client->dev, "%4s[%1d]\n", "up", i);
 #endif
 			prev->coord[i].sub_status &= ~(0x01);
-
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+			barrier[0] = false;
+			barrier[1] = false;
+#endif
 			input_mt_slot(data->input_dev_ts, i);
 			input_mt_report_slot_state(data->input_dev_ts,
 						   MT_TOOL_FINGER, false);
@@ -4249,6 +4248,9 @@ err_i2c:
 #if defined(CONFIG_PM) || defined(CONFIG_HAS_EARLYSUSPEND)
 static int bt404_ts_suspend(struct device *dev)
 {
+	if(s2w_switch)
+		return 0;
+
 	struct i2c_client *client = to_i2c_client(dev);
 	struct bt404_ts_data *data = i2c_get_clientdata(client);
 	int ret;
@@ -4295,6 +4297,9 @@ out:
 
 static int bt404_ts_resume(struct device *dev)
 {
+	if(s2w_switch)
+		return 0;
+
 	struct i2c_client *client = to_i2c_client(dev);
 	struct bt404_ts_data *data = i2c_get_clientdata(client);
 	int ret;
