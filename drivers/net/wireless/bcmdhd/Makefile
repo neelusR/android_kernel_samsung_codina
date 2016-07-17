@@ -87,6 +87,12 @@ DHDCFLAGS += -DWL_ENABLE_P2P_IF
 DHDCFLAGS += -DMULTIPLE_SUPPLICANT
 DHDCFLAGS += -DWL_CFG80211_STA_EVENT
 
+############
+# Meticulus
+############
+DHDCFLAGS += -DGET_CUSTOM_MAC_ENABLE
+DHDCFLAGS += -DCUSTOMER_HW2
+
 #########################
 # Chip dependent feature
 #########################
